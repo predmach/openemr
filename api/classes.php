@@ -53,6 +53,7 @@ require_once("$srcdir/authentication/password_change.php");
 include("includes/class.database.php");
 include("includes/class.arraytoxml.php");
 include("includes/class.phpmailer.php");
+include("$srcdir/clinical_rules.php");
 //include 'includes/aes.class.php';
 
 $site = 'default';

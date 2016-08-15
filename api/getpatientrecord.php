@@ -155,8 +155,66 @@ if ($userId = validateToken($token)) {
                 $xml_array['Patient']['notelist']['status'] = 1;
                 $xml_array['Patient']['notelist']['reason'] = 'No Patient Data found';
             }
-
-
+            //-----------------------------------CLINICAL ALERTS -----------------------------
+            $dateTarget = ($dateTarget) ? $dateTarget : date('Y-m-d H:i:s');
+            // Collect active actions
+            $actions = test_rules_clinic('','passive_alert',$dateTarget,'reminders-all', $p_id,'','default', array(),'primary',NULL,NULL,$user);
+            $alertsArray = fetchDataArray($actions, $dateTarget);
+            if($alertsArray){
+            /*$sqlQuery = "SELECT `date`, `pid`, `uid`, `category`, `value`, `new_value` FROM `clinical_rules_log` WHERE `pid` = ". $p_id;
+            $resData = sqlStatement($sqlQuery);
+            if($resData){
+                $all = array();
+                for($iter = 0;$row = sqlFetchArray($resData);$iter++){
+                  $all_alerts = json_decode($row['value'], true);
+                  $new_alerts = json_decode($row['newvalue'], true);
+                  $rules = array();
+                  $count = 0;
+                  foreach ($all_alerts as $targetInfo => $alert) {
+                    if ( ($row['category'] == 'clinical_reminder_widget') || ($row['category'] == 'active_reminder_popup') ) {
+                        $rule_title = getListItemTitle("clinical_rules",$alert['rule_id']);
+                        $catAndTarget = explode(':',$targetInfo);
+                        $category = $catAndTarget[0];
+                        $target = $catAndTarget[1];
+                        $description = generate_display_field(array('data_type'=>'1','list_id'=>'rule_action_category'),$category) .
+                        ": " . generate_display_field(array('data_type'=>'1','list_id'=>'rule_action'),$target) .
+                        " (" . generate_display_field(array('data_type'=>'1','list_id'=>'rule_reminder_due_opt'),$alert['due_status']) . ")";
+                        $rules['rule-'.$count]['title'] = $rule_title;
+                        $rules['rule-'.$count]['category'] = $category;
+                        $rules['rule-'.$count]['description'] = $description;
+                        $count++;
+                    }
+                  }
+                  $row['rules'] = $rules;
+                  $row -> newvalue = '';
+                  unset($row['newvalue']);
+                  unset($row['value']);
+                  unset($row['category']);
+                  $all[$iter] = $row;
+                }
+                $xml_array['Patient']['alertlist']['status'] = 0;
+                foreach ($all as $key => $alert_data_a) {
+                    $xml_array['Patient']['alertlist']['alert-' . $key] = $alert_data_a;
+                }
+                */
+                $xml_array['Patient']['alertlist']['status'] = 0;
+                $xml_array['Patient']['alertlist']['alerts'] = $alertsArray;
+            }else{
+              $xml_array['Patient']['alertlist']['status'] = 1;
+              $xml_array['Patient']['alertlist']['reason'] = 'No Alert Data found';
+            }
+            //-------------------------------------ALERTS - END --------------------------------
+            //-------------------------------------Appointment START----------------------------
+            $appointments = getAppointmentList($p_id);
+            if ($appointments) {
+                foreach ($appointments as $key => $appointment) {
+                    $xml_array["Patient"]["appointmentlist"]["appointment-$key"] = $appointment;
+                }
+            } else {
+                $xml_array["Patient"]["appointmentlist"]['status'] = -1;
+                $xml_array["Patient"]["appointmentlist"]['reason'] = 'Appointment not found.';
+            }
+            //-------------------------------------Appointment END-------------------------------
             $strQuery8 = "select date as vitalsdate, bps, bpd, weight, height, temperature, temp_method,
 				pulse, respiration, note as vitalnote, bmi, bmi_status, waist_circ, head_circ,
 				oxygen_saturation
@@ -210,4 +268,169 @@ if ($userId = validateToken($token)) {
 }
 
 echo ArrayToXML::toXml($xml_array, 'PatientList');
+
+//-----------------------------------------Added Supporting Functions-----------------------------------
+function display_array($your_array){
+  foreach ($your_array as $key => $value)
+  {
+      if(is_array($value))
+      {
+          display_array($value);
+      }
+      else
+      {
+           echo "Key: $key; Value: $value<br />\n";
+      }
+  }
+}
+
+function getAppointmentList($patient_id){
+  $appointmentArray = array();
+  if ($date == "") {
+      $date = date('Y-m-d');
+  }
+  $todate = strtotime('+1 month',strtotime ($date));
+  $todate = date('Y-m-d', $todate);
+  $appointments = fetchAppointments($date, $todate, $patient_id, $provider_id = null, $facility_id = null);
+  return $appointments;
+}
+
+function fetchDataArray($actions,$dateTarget)
+{
+
+    $current_targets = array();
+    $rules = array();
+    $counter = 0;
+    foreach ($actions as $action) {
+
+      // Deal with plan names first
+      if (isset($action['is_plan']) && $action['is_plan'])  {
+        //echo "<br><b>";
+        //echo htmlspecialchars( xl("Plan"), ENT_NOQUOTES) . ": ";
+        //echo generate_display_field(array('data_type'=>'1','list_id'=>'clinical_plans'),$action['id']);
+        //echo "</b><br>";
+        continue;
+      }
+
+      // Collect the Rule Title, Rule Developer, Rule Funding Source, and Rule Release and show it when hover over the item.
+      $tooltip = '';
+      if (!empty($action['rule_id'])) {
+        $reminder_interval_type = "patient_reminder";
+        $target_dates = calculate_reminder_dates($action['rule_id'], $dateTarget, $reminder_interval_type);
+        //display_array($target_dates);
+        $rule_title = getListItemTitle("clinical_rules",$action['rule_id']);
+        $ruleData = sqlQuery("SELECT `developer`, `funding_source`, `release_version`, `web_reference` " .
+                             "FROM `clinical_rules` " .
+                             "WHERE  `id`=? AND `pid`=0", array($action['rule_id']) );
+        $developer = $ruleData['developer'];
+        $funding_source = $ruleData['funding_source'];
+        $release = $ruleData['release_version'];
+        $web_reference = $ruleData['web_reference'];
+        if (!empty($rule_title)) {
+          $tooltip = xla('Rule Title') . ": " . attr($rule_title);
+        }
+        if (!empty($developer)) {
+          $tooltip .= xla('Rule Developer') . ": " . attr($developer);
+        }
+        if (!empty($funding_source)) {
+          $tooltip .= xla('Rule Funding Source') . ": " . attr($funding_source);
+        }
+        if (!empty($release)) {
+          $tooltip .= xla('Rule Release') . ": " . attr($release);
+        }
+        /*if ( (!empty($tooltip)) || (!empty($web_reference)) ) {
+          if (!empty($web_reference)) {
+            $tooltip = "<a href='".attr($web_reference)."' target='_blank' style='white-space: pre-line;' title='".$tooltip."'>?</a>";
+          }
+          else {
+            $tooltip = "<span style='white-space: pre-line;' title='".$tooltip."'>?</span>";
+          }
+        }*/
+      }
+
+      if ($action['custom_flag']) {
+        // Start link for reminders that use the custom rules input screen
+        //$url = "../rules/patient_data.php?category=".htmlspecialchars( $action['category'], ENT_QUOTES);
+        //$url .= "&item=".htmlspecialchars( $action['item'], ENT_QUOTES);
+        //echo "<a href='".$url."' class='iframe medium_modal' onclick='top.restoreSession()'>";
+      }
+      else if ($action['clin_rem_link']) {
+        // Start link for reminders that use the custom rules input screen
+      $pieces_url = parse_url($action['clin_rem_link']);
+      $url_prefix = $pieces_url['scheme'];
+      if($url_prefix == 'https' || $url_prefix == 'http'){
+      //echo "<a href='" . $action['clin_rem_link'] .
+      //    "' class='iframe  medium_modal' onclick='top.restoreSession()'>";
+      }else{
+      //echo "<a href='../../../" . $action['clin_rem_link'] .
+      //    "' class='iframe  medium_modal' onclick='top.restoreSession()'>";
+      }
+      }
+      else {
+        // continue since no link is needed
+      }
+
+      // Display Reminder Details
+      $rule_desc =  generate_display_field(array('data_type'=>'1','list_id'=>'rule_action_category'),$action['category']) .
+        ": " . generate_display_field(array('data_type'=>'1','list_id'=>'rule_action'),$action['item']);
+
+
+      //echo "Rule Desc::". $rule_desc;
+
+      if ($action['custom_flag'] || $action['clin_rem_link']) {
+        // End link for reminders that use an html link
+        //echo "</a>";
+      }
+
+      // Display due status
+      if ($action['due_status']) {
+        // Color code the status (red for past due, purple for due, green for not due and black for soon due)
+        if ($action['due_status'] == "past_due") {
+          //echo "&nbsp;&nbsp;(<span style='color:red'>";
+        }
+        else if ($action['due_status'] == "due") {
+          //echo "&nbsp;&nbsp;(<span style='color:purple'>";
+        }
+        else if ($action['due_status'] == "not_due") {
+          //echo "&nbsp;&nbsp;(<span style='color:green'>";
+        }
+        else {
+          //echo "&nbsp;&nbsp;(<span>";
+        }
+        //echo array('data_type'=>'1','list_id'=>'rule_reminder_due_opt');
+        //echo "<br>Due Status::".$action['due_status'];
+        $due_status = generate_display_field(array('data_type'=>'1','list_id'=>'rule_reminder_due_opt'),$action['due_status']);
+        //echo $due_status;
+      }
+
+      // Display the tooltip
+      if (!empty($tooltip)) {
+        //echo "&nbsp;".$tooltip."<br>";
+        //echo "<br>".$tooltip."<br>";
+      }
+      else {
+        //echo "<br>";
+      }
+
+      // Add the target(and rule id and room for future elements as needed) to the $current_targets array.
+      // Only when $mode is reminders-due
+      if ($mode == "reminders-due" && $GLOBALS['enable_alert_log']) {
+        $target_temp = $action['category'].":".$action['item'];
+        $current_targets[$target_temp] =  array('rule_id'=>$action['rule_id'],'due_status'=>$action['due_status']);
+      }
+      $rules['alert'.$counter]["description"] = $rule_desc;
+      $rules['alert'.$counter]["title"] = $tooltip;
+      $rules['alert'.$counter]["duestatus"] = $due_status;
+      $datecounter = 0;
+      foreach ($target_dates as $target_date) {
+        $rules['alert'.$counter]["targetdates"]['date-'.$datecounter] = $target_date;
+        $datecounter++;
+      }
+      $counter++;
+
+    }
+
+    return $rules;
+
+}
 ?>
