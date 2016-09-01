@@ -15,14 +15,16 @@ $envVars = [
   "DB_ENV_MYSQL_DATABASE",
   "DB_ENV_MYSQL_PASSWORD",
   "DB_ENV_MYSQL_ROOT_PASSWORD",
+  "MYSQL_ROOT_PASSWORD",
 ];
 
-foreach ($envVars as $envVar) {
+/*foreach ($envVars as $envVar) {
   $envValue = getenv($envVar);
-  //echo nl2br("<b>{$envVar}</b>: {$envValue}\n");
+  echo nl2br("<b>{$envVar}</b>: {$envValue}\n");
+}*/
+if(!empty(getenv("DB_PORT_3306_TCP_ADDR"))){
+  $host = getenv("DB_PORT_3306_TCP_ADDR");
 }
-
-$host = getenv("DB_PORT_3306_TCP_ADDR");
 //echo $host."\n";
 //echo $login."\n";
 //echo $pass."\n";
