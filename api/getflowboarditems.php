@@ -86,6 +86,99 @@ function getAppointmentList($u_id){
   }
   $todate = date('Y-m-d');
   $appointments = fetchAppointments($date, $todate, null, $u_id, $facility_id = null, null, null, null, null, true);
+  $appointments = sortAppointments( $appointments, 'time' );
+
+    	foreach ( $appointments as &$appointment ) {
+        # Collect appt date and set up squashed date for use below
+        $date_appt = $appointment['pc_eventDate'];
+        $date_squash = str_replace("-","",$date_appt);
+        # Collect variables and do some processing
+        $docname  = $appointment['ulname'] . ', ' . $appointment['ufname'] . ' ' . $appointment['umname'];
+        if (strlen($docname)<= 3 ) continue;
+        $ptname = $appointment['lname'] . ', ' . $appointment['fname'] . ' ' . $appointment['mname'];
+        $appt_enc = $appointment['encounter'];
+        if($appt_enc != 0) {
+          $appointment['str_encounter'] = text($appt_enc);
+        }else{
+          $appointment['str_encounter'] = '';
+        }
+        $appt_eid = (!empty($appointment['eid'])) ? $appointment['eid'] : $appointment['pc_eid'];
+        $appt_pid = (!empty($appointment['pid'])) ? $appointment['pid'] : $appointment['pc_pid'];
+        if ($appt_pid ==0 ) continue; // skip when $appt_pid = 0, since this means it is not a patient specific appt slot
+        $status = (!empty($appointment['status'])) ? $appointment['status'] : $appointment['pc_apptstatus'];
+        $appointment['str_status'] = text(getListItemTitle("apptstat",$status));
+        $appt_room = (!empty($appointment['room'])) ? $appointment['room'] : $appointment['pc_room'];
+        $appt_time = (!empty($appointment['appttime'])) ? $appointment['appttime'] : $appointment['pc_startTime'];
+        $tracker_id = $appointment['id'];
+        $newarrive = collect_checkin($tracker_id);
+        $newend = collect_checkout($tracker_id);
+        $colorevents = (collectApptStatusSettings($status));
+        $bgcolor = $colorevents['color'];
+        $appointment['str_bgcolor'] = $bgcolor;
+        $statalert = $colorevents['time_alert'];
+        # process the time to allow items with a check out status to be displayed
+        if ( is_checkout($status) && ($GLOBALS['checkout_roll_off'] > 0) ) {
+                $to_time = strtotime($newend);
+                $from_time = strtotime($datetime);
+                $display_check_out = round(abs($from_time - $to_time) / 60,0);
+                if ( $display_check_out >= $GLOBALS['checkout_roll_off'] ) continue;
+        }
+
+        $appointment['str_room'] = getListItemTitle('patient_flow_board_rooms', $appt_room);
+        $appointment['str_arrive'] = $newarrive;
+
+        #time in current status - START
+        $to_time = strtotime(date("Y-m-d H:i:s"));
+        $yestime = '0';
+        if (strtotime($newend) != '') {
+          $from_time = strtotime($newarrive);
+          $to_time = strtotime($newend);
+          $yestime = '0';
+        }
+        else
+        {
+          $from_time = strtotime($appointment['start_datetime']);
+          $yestime = '1';
+        }
+
+        $timecheck = round(abs($to_time - $from_time) / 60,0);
+         if ($timecheck >= $statalert && ($statalert != '0')) { # Determine if the time in status limit has been reached.
+            $appointment['str_blikclass'] ='js-blink-infinite';
+         }
+         else
+         {
+            $appointment['str_blikclass'] ='detail';
+         }
+         if (($yestime == '1') && ($timecheck >=1) && (strtotime($newarrive)!= '')) {
+             $appointment['str_currentstatustime']= text($timecheck . ' ' .($timecheck >=2 ? xl('minutes'): xl('minute')));
+         }else{
+             $appointment['str_currentstatustime'] = '';
+         }
+
+         # total time in practice
+    		 if (strtotime($newend) != '') {
+     			  $from_time = strtotime($newarrive);
+    			  $to_time = strtotime($newend);
+    		 }
+         else
+         {
+			      $from_time = strtotime($newarrive);
+ 		        $to_time = strtotime(date("Y-m-d H:i:s"));
+         }
+         $timecheck2 = round(abs($to_time - $from_time) / 60,0);
+         if (strtotime($newarrive) != '' && ($timecheck2 >=1)) {
+            $appointment['str_totaltime'] = text($timecheck2 . ' ' .($timecheck2 >=2 ? xl('minutes'): xl('minute')));
+         }else{
+            $appointment['str_totaltime'] = '';
+         }
+         # end total time in practice
+         if (strtotime($newend) != '') {
+            $appointment['str_checkouttime'] = text(substr($newend,11));
+         }else{
+            $appointment['str_checkouttime'] = '';
+         }
+    }
+
   return $appointments;
 }
 
